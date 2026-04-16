@@ -6,7 +6,7 @@ if (-not (Get-PSRepository -Name 'PSGallery' -ErrorAction SilentlyContinue)) { R
 Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted
 
 #Cleaninng up old report files
-if (-not (Test-Path 'C:\Realtime')) { New-Item -Path 'C:\Realtime' -ItemType Directory }
+if (-not (Test-Path 'C:\Realtime\Reports\')) { New-Item -Path 'C:\Realtime\Reports\' -ItemType Directory }
 Remove-Item -Path "C:\Realtime\Reports\*.csv" -Force -ErrorAction SilentlyContinue
 
 # --- Console Buffer ---
