@@ -4,28 +4,37 @@ Set-ExecutionPolicy Unrestricted -Scope CurrentUser -Force
 Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Confirm:$false
 if (-not (Get-PSRepository -Name 'PSGallery' -ErrorAction SilentlyContinue)) { Register-PSRepository -Default -ErrorAction Stop }
 Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted
-Get-PSRepository
 
 # --- Console Buffer ---
 $host.UI.RawUI.BufferSize = New-Object System.Management.Automation.Host.Size(500, 9000)
 
-# --- Fetch and Run: GitHub Script ---( Sample Code)
-# Invoke-Expression (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/Vibhu2/ITAdmin_Public_Scripts/main/VBWorkstationReportClean.ps1' -UseBasicParsing).Content
+# --- Module Cleanup and Reinstall ---
+Remove-Module VB.WorkstationReport, VB.NextCloud -Force -ErrorAction SilentlyContinue
+Uninstall-Module -Name VB.WorkstationReport, VB.NextCloud -Force -AllVersions -ErrorAction SilentlyContinue
 
-# --- Install Modules ---
-# Remove from current session (if loaded)
-Remove-Module VB.WorkstationReport -Force -ErrorAction SilentlyContinue
-Remove-Module VB.NextCloud -Force -ErrorAction SilentlyContinue
-
-# Uninstall from disk completely
-Uninstall-Module -Name VB.WorkstationReport -Force -AllVersions -ErrorAction SilentlyContinue
-Uninstall-Module -Name VB.NextCloud -Force -AllVersions -ErrorAction SilentlyContinue
-
-# Reinstall fresh
-
-Install-Module -Name VB.WorkstationReport -Force -AllowClobber -Scope CurrentUser
+# Install in dependency order: NextCloud FIRST (it's the dependency)
 Install-Module -Name VB.NextCloud -Force -AllowClobber -Scope CurrentUser
+Install-Module -Name VB.WorkstationReport -Force -AllowClobber -Scope CurrentUser
+
+# Import modules explicitly into current session
+Import-Module VB.NextCloud -Force
+Import-Module VB.WorkstationReport -Force
+
+# Verify modules are loaded
+Write-Host "Checking loaded modules..." -ForegroundColor Cyan
+Get-Module VB.NextCloud, VB.WorkstationReport | Format-Table Name, Version, Source
 
 # --- Run Report ---
 $cred = New-Object PSCredential('justvibh', (ConvertTo-SecureString 'S2MgX-CiqjC-NzXLG-5gRaJ-ewFJk' -AsPlainText -Force))
-Invoke-VBWorkstationReport -Credential $cred -NextcloudBaseUrl 'https://vault.dediserve.com' -NextcloudDestination 'Realtime-IT/Reports' -OutputPath 'C:\Realtime\Reports'
+
+try {
+    Write-Host "Starting workstation report..." -ForegroundColor Cyan
+    Invoke-VBWorkstationReport -Credential $cred `
+        -NextcloudBaseUrl 'https://vault.dediserve.com' `
+        -NextcloudDestination 'Realtime-IT/Reports' `
+        -OutputPath 'C:\Realtime\Reports'
+    Write-Host "Report completed successfully." -ForegroundColor Green
+}
+catch {
+    Write-Host "Report failed: $($_.Exception.Message)" -ForegroundColor Red
+}
