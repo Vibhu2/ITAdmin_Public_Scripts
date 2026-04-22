@@ -1,0 +1,104 @@
+
+Get-VBSystemInfo ( Done )
+
+--- COMPUTER IDENTITY ---
+ComputerName              : ITBD-CHD-LP134
+DNSHostname               : ITBD-CHD-LP134
+Domain                    : WORKGROUP
+DomainRole                : Standalone Workstation
+LogonServer               : \\ITBD-CHD-LP134
+
+--- NETWORK ---
+PrimaryIP                 : 169.254.147.94
+IPAssignment              : DHCP
+
+--- OPERATING SYSTEM ---
+OSName                    : Microsoft Windows 11 Pro
+OSVersion                 : 10.0.26100
+OSBuild                   : 26100
+OSDisplayVersion          : 24H2
+OSInstallDate             : 2/3/2026 8:33:50 AM
+
+--- HARDWARE ---
+SystemManufacturer        : Dell Inc.
+SystemModel               : Latitude 3520
+Processor                 : 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz
+Cores                     : 4
+LogicalProcessors         : 8
+TotalMemoryGB             : 15.74
+FreeMemoryGB              : 2.28
+
+--- BIOS/FIRMWARE ---
+BIOSType                  : UEFI
+BIOSVersion               : 1.46.0
+BIOSManufacturer          : Dell Inc.
+BIOSSerialNumber          : 8K65CL3
+BIOSReleaseDate           : 12/26/2025 5:30:00 AM
+
+--- SYSTEM ---
+TimeZone                  : India Standard Time
+LastBootTime              : 4/15/2026 1:28:59 PM
+Status                    : Success
+CollectionTime            : 16-04-2026 13:32:10
+
+________________________________________________________________________________________
+
+Get-VBDiskInventory ( Formatting to be taken later will have multiple Disk this is one Disk information )
+
+ComputerName    : ITBD-CHD-LP134
+DriveLetter     : C:
+Label           :
+FileSystem      : NTFS
+TotalSizeGB     : 473.63
+UsedGB          : 338.91
+FreeGB          : 134.72
+FreePercent     : 28.4
+StorageType     : Local
+DiskType        : Direct Disk
+MediaType       : SSD
+BusType         : NVMe
+FriendlyName    : BC711 NVMe SK hynix 512GB
+HealthStatus    : Healthy
+SerialNumber    : FFFF_FFFF_FFFF_FFFF.
+FirmwareVersion : 41002131
+InterfaceType   : SCSI
+WMICaption      : BC711 NVMe SK hynix 512GB
+DiskNumber      : 0
+IsVolumeBased   : True
+Status          : Success
+CollectionTime  : 16-04-2026 14:20:19
+________________________________________________________________________________________
+get-vbNetworkInformation ( can have multilple NETWORK this ie one adapter information)
+
+ComputerName         : ITBD-CHD-LP134
+InterfaceAlias       :
+InterfaceDescription : Hyper-V Virtual Switch Extension Adapter
+IPv4Address          :
+IPv6Address          :
+SubnetMask           :
+DefaultGateway       :
+DNSServers           :
+DHCPEnabled          : False
+MACAddress           :
+InterfaceIndex       : 14
+ConnectionStatus     : Unknown
+Status               : Success
+CollectionTime       : 16-04-2026 14:27:23
+
+
+________________________________________________________________________________________
+
+Get-VBShareInformation (can have multiple Printers and their information this is one sample network information)
+
+ComputerName          : DSI-DH01-DC-004
+ShareName             : Xerox WorkCentre 7225
+ShareType             : Printer
+Path                  : Xerox WorkCentre 7225,LocalsplOnly
+Description           : Xerox WorkCentre 7225
+AvailabilityType      : NonClustered
+ShareState            : Online
+ConcurrentUserLimit   : 0
+EncryptData           : False
+CachingPolicy         :
+FolderEnumerationMode : Unrestricted
+Status                : Success
