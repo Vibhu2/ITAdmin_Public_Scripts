@@ -25,6 +25,8 @@ Install-Module -Name VB.NextCloud -Force -AllowClobber -Scope CurrentUser
 Install-Module -Name VB.ServerInventory -Force -AllowClobber -Scope CurrentUser
 Install-Module -Name VB.AdminTools -Force -AllowClobber -Scope CurrentUser
 
+start-sleep -seconds (Get-Random -Minimum 4 -Maximum 10)
+
 # Import modules explicitly into current session
 Import-Module VB.NextCloud -Force
 Import-Module VB.WorkstationReport -Force
