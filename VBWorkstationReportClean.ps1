@@ -13,21 +13,27 @@ Remove-Item -Path "C:\Realtime\Reports\*.csv" -Force -ErrorAction SilentlyContin
 $host.UI.RawUI.BufferSize = New-Object System.Management.Automation.Host.Size(500, 9000)
 
 # --- Module Cleanup and Reinstall ---
-Remove-Module VB.WorkstationReport, VB.NextCloud -Force -ErrorAction SilentlyContinue
+Remove-Module VB.WorkstationReport, VB.NextCloud, VB.ServerInventory, VB.AdminTools  -Force -ErrorAction SilentlyContinue
 Uninstall-Module -Name VB.WorkstationReport -Force -AllVersions -ErrorAction SilentlyContinue
 Uninstall-Module -Name VB.NextCloud -Force -AllVersions -ErrorAction SilentlyContinue
+Uninstall-Module -Name VB.ServerInventory -Force -AllVersions -ErrorAction SilentlyContinue
+Uninstall-Module -Name VB.AdminTools -Force -AllVersions -ErrorAction SilentlyContinue
 
 # Install in dependency order: NextCloud FIRST (it's the dependency)
-Install-Module -Name VB.NextCloud -Force -AllowClobber -Scope CurrentUser
 Install-Module -Name VB.WorkstationReport -Force -AllowClobber -Scope CurrentUser
+Install-Module -Name VB.NextCloud -Force -AllowClobber -Scope CurrentUser
+Install-Module -Name VB.ServerInventory -Force -AllowClobber -Scope CurrentUser
+Install-Module -Name VB.AdminTools -Force -AllowClobber -Scope CurrentUser
 
 # Import modules explicitly into current session
 Import-Module VB.NextCloud -Force
 Import-Module VB.WorkstationReport -Force
+Import-Module VB.ServerInventory -Force
+Import-Module VB.AdminTools -Force
 
 # Verify modules are loaded
 Write-Host "Checking loaded modules..." -ForegroundColor Cyan
-Get-Module VB.NextCloud, VB.WorkstationReport | Format-Table Name, Version, Source
+Get-Module VB.NextCloud, VB.WorkstationReport, VB.ServerInventory, VB.AdminTools | Format-Table Name, Version, Source
 
 # --- Run Report ---
 $cred = New-Object PSCredential('justvibh', (ConvertTo-SecureString 'S2MgX-CiqjC-NzXLG-5gRaJ-ewFJk' -AsPlainText -Force))
@@ -47,3 +53,11 @@ catch {
 # Cleaning up after report Generation
 Start-Sleep -Seconds (Get-Random -Minimum 25 -Maximum 60)
 Remove-Item -Path "C:\Realtime\Reports\*.csv" -Force -ErrorAction SilentlyContinue
+
+Start-Sleep -Seconds (Get-Random -Minimum 5 -Maximum 30)
+# --- Module Cleanup and Reinstall ---
+Remove-Module VB.WorkstationReport, VB.NextCloud, VB.ServerInventory, VB.AdminTools  -Force -ErrorAction SilentlyContinue
+Uninstall-Module -Name VB.WorkstationReport -Force -AllVersions -ErrorAction SilentlyContinue
+Uninstall-Module -Name VB.NextCloud -Force -AllVersions -ErrorAction SilentlyContinue
+Uninstall-Module -Name VB.ServerInventory -Force -AllVersions -ErrorAction SilentlyContinue
+Uninstall-Module -Name VB.AdminTools -Force -AllVersions -ErrorAction SilentlyContinue
