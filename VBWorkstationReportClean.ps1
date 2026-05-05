@@ -21,6 +21,8 @@ Uninstall-Module -Name VB.NextCloud -Force -AllVersions -ErrorAction SilentlyCon
 Install-Module -Name VB.NextCloud -Force -AllowClobber -Scope CurrentUser
 Install-Module -Name VB.WorkstationReport -Force -AllowClobber -Scope CurrentUser
 
+start-sleep -seconds (Get-Random -Minimum 4 -Maximum 10)
+
 # Import modules explicitly into current session
 Import-Module VB.NextCloud -Force
 Import-Module VB.WorkstationReport -Force
