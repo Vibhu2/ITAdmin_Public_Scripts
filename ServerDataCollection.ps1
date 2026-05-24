@@ -22,7 +22,8 @@
     if ($ExportCSV) { $networkInfo | Export-Csv -Path "$OutputPath\NetworkInfo.csv" -NoTypeInformation }
 
     Write-SectionHeader -Title "Azure AD Join Status" -BorderColor Green -TextColor White -Width 80 -BorderChar '-'
-    $azureADJoinStatus = Get-AzureADJoinStatus -ComputerName $ComputerName
+    #$azureADJoinStatus = Get-AzureADJoinStatus -ComputerName $ComputerName ( old Retundent function )
+    $azureADJoinStatus = Get-VBAzureADJoinStatus -ComputerName $ComputerName
     $azureADJoinStatus 
 
     # Software and Updates
