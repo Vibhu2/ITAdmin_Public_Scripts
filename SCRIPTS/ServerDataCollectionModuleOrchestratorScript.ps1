@@ -1,73 +1,28 @@
-<#
-.SYNOPSIS
-    Orchestrator script ? downloads the VB.ServerInventory module, runs a full
-    section-wise server inventory report, exports each section to CSV, saves the
-    full report as a transcript TXT, then removes the module from the server.
+# ============================================================
+# SCRIPT   : ServerDataCollectionModuleOrchestratorScript
+# VERSION  : 2.3.1
+# CHANGED  : 24-05-2026 -- Auto-detect scalars vs nested props (works without module update);
+#            SummaryProperties used when present, type-detection fallback otherwise;
+#            v2.2.0 -- VB coding standards alignment: CimInstance, Dark* colours,
+#            non-ASCII, hardcoded paths, ErrorActionPreference, config block,
+#            helper section, PascalCase vars, named parameters
+# AUTHOR   : Vibhu Bhatnagar
+# PURPOSE  : Downloads VB.ServerInventory module, runs full server inventory,
+#            exports each section to CSV, saves transcript TXT
+# ENCODING : UTF-8 with BOM
+# ============================================================
 
-.DESCRIPTION
-    This script is the single entry point for collecting a complete server
-    inventory using the VB.ServerInventory module published on PSGallery.
-
-    Execution flow:
-        1. Install VB.ServerInventory fresh from PSGallery (always latest version)
-        2. Run every inventory section (Core, AD, Security, Printing, Apps)
-        3. Print section-wise formatted output captured in a transcript TXT
-        4. Export each section's data to its own CSV file
-        5. Unload and uninstall the module ? no trace left on the server
-
-    Output location: C:\Realtime\<hostname>-<timestamp>\
-        - <hostname>-<timestamp>-Report.txt  : Full transcript of all sections
-        - <SectionName>.csv                  : One CSV per inventory section
-
-.NOTES
-    Author  : Vibhu Bhatnagar
-    Version : 2.0.0
-    Requires: PowerShell 5.1+, internet access to PSGallery, admin rights
-#>
+$ErrorActionPreference = 'Stop'
 
 #region -----------------------------------------------------------------------
-# STEP 1 : ENVIRONMENT SETUP
-# Create a timestamped output folder under C:\Realtime\ for this run.
-# All CSV exports and the transcript TXT will land here.
+# CONFIGURATION
 #-------------------------------------------------------------------------------
-Clear-Host
+$OUTPUT_ROOT   = 'C:\Realtime'
+$MODULE_ROOT   = Join-Path $env:ProgramFiles 'WindowsPowerShell\Modules'
+$REPO_ZIP_URL  = 'https://github.com/Vibhu2/ITAdmin_Tools/archive/refs/heads/main.zip'
+$SCREEN_ROWS   = 10
 
-$hostname = $env:COMPUTERNAME
-$username = $env:USERNAME
-$domain = $env:USERDNSDOMAIN
-$psVersion = $PSVersionTable.PSVersion.ToString()
-$timestamp = Get-Date -Format 'dd-MMM-yyyy-HH-mm-ss'
-
-# $env:USERDNSDOMAIN is empty when running as SYSTEM ? fall back to the AD domain
-# from WMI which works regardless of the run-as account.
-$domain = $env:USERDNSDOMAIN
-if (-not $domain) {
-    $domain = (Get-WmiObject -Class Win32_ComputerSystem).Domain
-}
-if (-not $domain) { $domain = 'NODOMAIN' }
-
-$OutputPath = "C:\Realtime\${domain}-${hostname}-${timestamp}"
-
-New-Item -Path $OutputPath -ItemType Directory -Force | Out-Null
-
-Write-Host "================================================" -ForegroundColor Cyan
-Write-Host "  SERVER INVENTORY ORCHESTRATOR"                  -ForegroundColor White
-Write-Host "  Host     : $hostname"                           -ForegroundColor White
-Write-Host "  Domain   : $domain"                             -ForegroundColor White
-Write-Host "  User     : $username"                           -ForegroundColor White
-Write-Host "  PS Ver   : $psVersion"                          -ForegroundColor White
-Write-Host "  Output   : $OutputPath"                         -ForegroundColor White
-Write-Host "================================================" -ForegroundColor Cyan
-#endregion
-#region -----------------------------------------------------------------------
-# STEP 2 : MODULE LOAD  (PSGallery → GitHub ZIP fallback)
-# PS 5.1 on older/air-gapped servers may not reach PSGallery.
-# Fallback: download the ITAdmin_Tools repo ZIP from GitHub, extract all
-# VB.* modules, and stage them into the system module path.
-#-------------------------------------------------------------------------------
-Write-Host "`n[Step 2] Loading VB modules..." -ForegroundColor Cyan
-
-$modulesToLoad = @(
+$ModulesToLoad = @(
     'VB.ServerInventory',
     'VB.WorkstationReport',
     'VB.NextCloud',
@@ -76,134 +31,221 @@ $modulesToLoad = @(
     'VB.WindowsDNSLogAnalysis'
 )
 
-$moduleRoot    = 'C:\Program Files\WindowsPowerShell\Modules'
-$missingModules = @()
+$SingleRecordSections = @(
+    'SystemInfo', 'AzureADJoinStatus', 'DNSServerInfo',
+    'DHCPInformation', 'DHCPDetailedInfo', 'ActiveDirectory',
+    'BitLockerRecovery', 'RDSUsers', 'InactiveUsers', 'InactiveComputers'
+)
+#endregion
 
-# Eject any stale in-session copies
-foreach ($mod in $modulesToLoad) {
-    Remove-Module -Name $mod -Force -ErrorAction SilentlyContinue
-}
+#region -----------------------------------------------------------------------
+# HELPER FUNCTIONS
+#-------------------------------------------------------------------------------
 
-# Identify which modules are missing from disk
-foreach ($mod in $modulesToLoad) {
-    if (-not (Get-Module -Name $mod -ListAvailable)) {
-        $missingModules += $mod
-    }
-}
-
-if ($missingModules.Count -eq 0) {
-    Write-Host "         All modules already present locally." -ForegroundColor Green
-}
-else {
-    Write-Host "         Missing: $($missingModules -join ', ')" -ForegroundColor Yellow
-
-    # --- Attempt 1: PSGallery (individual, non-fatal per module) ----------------
-    Write-Host "         Trying PSGallery..." -ForegroundColor Yellow
-    $stillMissing = @()
-
-    try {
-        Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope AllUsers -ErrorAction Stop | Out-Null
-    }
-    catch {
-        Write-Host "         NuGet provider install failed — PSGallery likely unreachable." -ForegroundColor Yellow
-    }
-
-    foreach ($mod in $missingModules) {
-        try {
-            Install-Module -Name $mod -Force -AllowClobber -Scope AllUsers -ErrorAction Stop
-            Write-Host "         [OK] $mod installed from PSGallery." -ForegroundColor Green
-        }
-        catch {
-            Write-Host "         [SKIP] $mod — PSGallery failed: $($_.Exception.Message)" -ForegroundColor Yellow
-            $stillMissing += $mod
-        }
-    }
-
-    # --- Attempt 2: GitHub ZIP fallback (only for what PSGallery didn't get) ----
-    if ($stillMissing.Count -gt 0) {
-        Write-Host "         Falling back to GitHub ZIP for: $($stillMissing -join ', ')" -ForegroundColor Yellow
-
-        $repoZipUrl  = 'https://github.com/Vibhu2/ITAdmin_Tools/archive/refs/heads/main.zip'
-        $zipDest     = Join-Path $env:TEMP 'ITAdmin_Tools.zip'
-        $extractRoot = Join-Path $env:TEMP 'ITAdmin_Tools_Extract'
-
-        try {
-            Write-Host "         Downloading repo ZIP..." -ForegroundColor Yellow
-            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-            Invoke-WebRequest -Uri $repoZipUrl -OutFile $zipDest -UseBasicParsing -ErrorAction Stop
-            Write-Host "         Download complete." -ForegroundColor Green
-
-            if (Test-Path $extractRoot) { Remove-Item $extractRoot -Recurse -Force }
-            Add-Type -AssemblyName System.IO.Compression.FileSystem
-            [System.IO.Compression.ZipFile]::ExtractToDirectory($zipDest, $extractRoot)
-
-            foreach ($mod in $stillMissing) {
-                $moduleSource = Get-ChildItem -Path $extractRoot -Recurse -Directory |
-                                Where-Object { $_.Name -eq $mod } |
-                                Select-Object -First 1
-
-                if (-not $moduleSource) {
-                    Write-Warning "Folder '$mod' not found inside the GitHub ZIP — skipping."
-                    continue
+# Flattens nested arrays / hashtables / PSCustomObjects so Export-Csv writes
+# real values instead of 'System.Object[]' type-name strings.
+function ConvertTo-FlatObject {
+    [CmdletBinding()]
+    [OutputType([PSCustomObject])]
+    param([Parameter(ValueFromPipeline)][object]$InputObject)
+    process {
+        if ($null -eq $InputObject) { return }
+        $props = [ordered]@{}
+        foreach ($prop in $InputObject.PSObject.Properties) {
+            $val = $prop.Value
+            $props[$prop.Name] = switch ($true) {
+                ($val -is [System.Collections.IEnumerable] -and $val -isnot [string]) {
+                    ($val | ForEach-Object { $_ }) -join '; '; break
                 }
-
-                $moduleDest = Join-Path $moduleRoot $mod
-                if (Test-Path $moduleDest) { Remove-Item $moduleDest -Recurse -Force }
-                Copy-Item -Path $moduleSource.FullName -Destination $moduleDest -Recurse -Force
-                Write-Host "         [OK] $mod staged from GitHub ZIP." -ForegroundColor Green
+                ($val -is [hashtable] -or $val -is [PSCustomObject]) {
+                    $val | ConvertTo-Json -Compress -Depth 3; break
+                }
+                default { $val }
             }
         }
-        catch {
-            Write-Error "GitHub ZIP fallback failed: $($_.Exception.Message)"
-            exit 1
-        }
-        finally {
-            if (Test-Path $zipDest)     { Remove-Item $zipDest     -Force -ErrorAction SilentlyContinue }
-            if (Test-Path $extractRoot) { Remove-Item $extractRoot -Recurse -Force -ErrorAction SilentlyContinue }
-        }
+        [PSCustomObject]$props
+    }
+}
+#endregion
+
+#region -----------------------------------------------------------------------
+# STEP 1 : ENVIRONMENT SETUP
+#-------------------------------------------------------------------------------
+Clear-Host
+
+$Hostname  = $env:COMPUTERNAME
+$Username  = $env:USERNAME
+$PsVersion = $PSVersionTable.PSVersion.ToString()
+$Timestamp = Get-Date -Format 'dd-MMM-yyyy-HH-mm-ss'
+
+$Domain = $env:USERDNSDOMAIN
+if (-not $Domain) { $Domain = (Get-CimInstance -ClassName Win32_ComputerSystem).Domain }
+if (-not $Domain) { $Domain = 'NODOMAIN' }
+
+$OutputPath = Join-Path $OUTPUT_ROOT "${Domain}-${Hostname}-${Timestamp}"
+New-Item -Path $OutputPath -ItemType Directory -Force | Out-Null
+
+Write-Host "================================================" -ForegroundColor Cyan
+Write-Host "  SERVER INVENTORY ORCHESTRATOR"                  -ForegroundColor White
+Write-Host "  Host     : $Hostname"                           -ForegroundColor White
+Write-Host "  Domain   : $Domain"                             -ForegroundColor White
+Write-Host "  User     : $Username"                           -ForegroundColor White
+Write-Host "  PS Ver   : $PsVersion"                          -ForegroundColor White
+Write-Host "  Output   : $OutputPath"                         -ForegroundColor White
+Write-Host "================================================" -ForegroundColor Cyan
+#endregion
+
+#region -----------------------------------------------------------------------
+# STEP 2 : MODULE LOAD  (PSGallery -> GitHub ZIP fallback)
+#-------------------------------------------------------------------------------
+Write-Host "`n[Step 2] Loading VB modules..." -ForegroundColor Cyan
+
+$LoadSource = @{}
+
+# --- Remove existing copies --------------------------------------------------
+Write-Host "         Removing existing VB module installations..." -ForegroundColor Yellow
+foreach ($mod in $ModulesToLoad) {
+    Remove-Module -Name $mod -Force -ErrorAction SilentlyContinue
+    $modPath = Join-Path $MODULE_ROOT $mod
+    if (Test-Path -Path $modPath) {
+        Remove-Item -Path $modPath -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Host "         [REMOVED] $modPath" -ForegroundColor Gray
+    }
+    $LoadSource[$mod] = 'Not Loaded'
+}
+
+# --- Attempt 1: PSGallery ----------------------------------------------------
+Write-Host "`n         Attempting PSGallery installs..." -ForegroundColor Yellow
+$StillMissing = @()
+
+try {
+    Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope AllUsers -ErrorAction Stop | Out-Null
+}
+catch {
+    Write-Host "         NuGet provider unavailable -- PSGallery likely unreachable." -ForegroundColor Yellow
+}
+
+foreach ($mod in $ModulesToLoad) {
+    try {
+        Install-Module -Name $mod -Force -AllowClobber -Scope AllUsers -ErrorAction Stop
+        $LoadSource[$mod] = 'PSGallery'
+        Write-Host "         [OK] $mod installed from PSGallery." -ForegroundColor Green
+    }
+    catch {
+        Write-Host "         [FAIL] $mod -- PSGallery unavailable, queued for GitHub." -ForegroundColor Yellow
+        $StillMissing += $mod
     }
 }
 
-# Final import + verify (VB.ServerInventory is mandatory; rest are best-effort)
-foreach ($mod in $modulesToLoad) {
+# --- Attempt 2: GitHub ZIP fallback ------------------------------------------
+if ($StillMissing.Count -gt 0) {
+    Write-Host "`n         Downloading from GitHub: $($StillMissing -join ', ')" -ForegroundColor Cyan
+
+    $ZipDest     = Join-Path $env:TEMP 'ITAdmin_Tools-main.zip'
+    $ExtractRoot = Join-Path $env:TEMP 'ITAdmin_Tools-main_Extract'
+
+    Write-Host "         ZIP destination : $ZipDest"     -ForegroundColor Gray
+    Write-Host "         Extract root    : $ExtractRoot" -ForegroundColor Gray
+
+    # Download
+    Write-Host "`n         Downloading ZIP..." -ForegroundColor Yellow
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    Invoke-WebRequest -Uri $REPO_ZIP_URL -OutFile $ZipDest -UseBasicParsing -ErrorAction Stop
+    Write-Host "         Download complete. Size: $([math]::Round((Get-Item -Path $ZipDest).Length / 1KB, 1)) KB" -ForegroundColor Green
+
+    # Extract
+    Write-Host "         Extracting ZIP..." -ForegroundColor Yellow
+    if (Test-Path -Path $ExtractRoot) { Remove-Item -Path $ExtractRoot -Recurse -Force }
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    [System.IO.Compression.ZipFile]::ExtractToDirectory($ZipDest, $ExtractRoot)
+    Write-Host "         Extraction complete." -ForegroundColor Green
+
+    # Stage modules
+    Write-Host "         Staging modules..." -ForegroundColor Yellow
+    foreach ($mod in $StillMissing) {
+        $modSource = Get-ChildItem -Path $ExtractRoot -Recurse -Directory |
+                     Where-Object { $_.Name -eq $mod } |
+                     Select-Object -First 1
+
+        if (-not $modSource) {
+            Write-Host "         [MISSING] $mod -- folder not found in ZIP." -ForegroundColor Red
+            $LoadSource[$mod] = 'Not Found'
+            continue
+        }
+
+        $modDest = Join-Path $MODULE_ROOT $mod
+        if (Test-Path -Path $modDest) { Remove-Item -Path $modDest -Recurse -Force }
+        Copy-Item -Path $modSource.FullName -Destination $modDest -Recurse -Force
+
+        $fileCount = (Get-ChildItem -Path $modDest -Recurse -File).Count
+        Write-Host "         [OK] $mod staged. ($fileCount files)" -ForegroundColor Green
+        $LoadSource[$mod] = 'GitHub'
+    }
+
+    # Verify manifests
+    Write-Host "         Verifying manifests..." -ForegroundColor Yellow
+    foreach ($mod in $StillMissing) {
+        $psd1 = Get-ChildItem -Path (Join-Path $MODULE_ROOT $mod) -Filter '*.psd1' -Recurse -ErrorAction SilentlyContinue |
+                Select-Object -First 1
+        if ($psd1) {
+            Write-Host "         [OK] $mod manifest: $($psd1.FullName)" -ForegroundColor Green
+        }
+        else {
+            Write-Host "         [WARN] $mod -- no .psd1 manifest found." -ForegroundColor Yellow
+        }
+    }
+
+    # Cleanup temp files
+    if (Test-Path -Path $ZipDest)     { Remove-Item -Path $ZipDest     -Force -ErrorAction SilentlyContinue }
+    if (Test-Path -Path $ExtractRoot) { Remove-Item -Path $ExtractRoot -Recurse -Force -ErrorAction SilentlyContinue }
+    Write-Host "         Temp files cleaned up." -ForegroundColor Gray
+}
+
+# --- Import all modules ------------------------------------------------------
+Write-Host "`n         Importing modules..." -ForegroundColor Yellow
+foreach ($mod in $ModulesToLoad) {
     Import-Module -Name $mod -Force -ErrorAction SilentlyContinue
-    if (Get-Module -Name $mod) {
-        Write-Host "         [LOADED] $mod v$((Get-Module $mod).Version)" -ForegroundColor Green
+}
+
+# --- Summary -----------------------------------------------------------------
+Write-Host "`n[Step 2] Module load summary:" -ForegroundColor Cyan
+Write-Host ("-" * 62) -ForegroundColor Gray
+
+foreach ($mod in $ModulesToLoad) {
+    $imported = Get-Module -Name $mod
+    if ($imported) {
+        $source = $LoadSource[$mod]
+        $color  = switch ($source) {
+            'PSGallery' { 'Green'  }
+            'GitHub'    { 'Cyan'   }
+            default     { 'Yellow' }
+        }
+        Write-Host ("  {0,-35} v{1,-10} [{2}]" -f $mod, $imported.Version, $source) -ForegroundColor $color
     }
     else {
-        Write-Warning "$mod could not be loaded."
+        Write-Host ("  {0,-35} {1,-10} [FAILED]" -f $mod, '---') -ForegroundColor Red
     }
 }
 
+Write-Host ("-" * 62) -ForegroundColor Gray
+
 if (-not (Get-Module -Name 'VB.ServerInventory')) {
-    Write-Error "VB.ServerInventory failed to load after all install attempts. Aborting."
+    Write-Host "`n[FATAL] VB.ServerInventory failed to load. Aborting." -ForegroundColor Red
+    Read-Host  "        Press Enter to exit"
     exit 1
 }
 #endregion
 
-
 #region -----------------------------------------------------------------------
 # STEP 3 : TRANSCRIPT START
-# Start-Transcript captures every line printed to the console into a TXT file.
-# This becomes the human-readable full report for this run.
 #-------------------------------------------------------------------------------
-$TranscriptFile = Join-Path $OutputPath "${hostname}-${timestamp}-Report.txt"
+$TranscriptFile = Join-Path $OutputPath "${Hostname}-${Domain}-${Timestamp}-Report.txt"
 Write-Host "`n[Step 3] Starting transcript: $TranscriptFile" -ForegroundColor Cyan
 Start-Transcript -Path $TranscriptFile
 #endregion
 
-
 #region -----------------------------------------------------------------------
 # STEP 4 : INVENTORY DATA COLLECTION
-# Call Get-VBServerInventory with all section flags so every function in the
-# module is executed. Returns an array of PSCustomObjects ? one per section ?
-# each containing: Section, ComputerName, RecordCount, Data, Status, Error.
-#
-# Flags:
-#   -IncludeAD       : AD info, GPO, AD hygiene (inactive users/computers, etc.)
-#   -IncludeSecurity : BitLocker, firewall rules, Azure AD join, scheduled tasks
-#   -IncludePrinting : Printers, file shares, print usage history
-#   -IncludeApps     : Installed apps, Windows features/roles, updates, Store apps
 #-------------------------------------------------------------------------------
 Write-Host "`n[Step 4] Collecting inventory data -- all sections enabled..." -ForegroundColor Cyan
 
@@ -216,62 +258,395 @@ $InventoryResults = Get-VBServerInventory `
 Write-Host "         Data collection complete. Sections returned: $($InventoryResults.Count)" -ForegroundColor Green
 #endregion
 
-
 #region -----------------------------------------------------------------------
 # STEP 5 : SECTION-WISE REPORT OUTPUT + CSV EXPORT
-# Iterate every section result. For each section:
-#   - Print a clearly labelled header to the console (captured by transcript)
-#   - Display the data using Format-List (single-object sections) or
-#     Format-Table -AutoSize (multi-row sections)
-#   - Export the raw data to a dedicated CSV file in the output folder
-#
-# Sections that use Format-List (they return a single flat object):
-#   SystemInfo, AzureADJoinStatus, DNSServerInfo
-# All other sections use Format-Table.
 #-------------------------------------------------------------------------------
-$listSections = @('SystemInfo', 'AzureADJoinStatus', 'DNSServerInfo')
-
 Write-Host "`n"
 Write-Host "################################################################" -ForegroundColor White
-Write-Host "  SERVER INVENTORY REPORT : $hostname"                            -ForegroundColor White
+Write-Host "  SERVER INVENTORY REPORT : $Hostname"                            -ForegroundColor White
 Write-Host "  Generated : $(Get-Date -Format 'dd-MMM-yyyy HH:mm:ss')"        -ForegroundColor White
 Write-Host "################################################################" -ForegroundColor White
 
 foreach ($section in $InventoryResults) {
 
-    # ---- Section header ----
+    $recordCount = if ($null -ne $section.RecordCount -and $section.RecordCount -ne '') {
+        $section.RecordCount
+    } else {
+        @($section.Data).Count
+    }
+
     $statusColor = if ($section.Status -eq 'Success') { 'Green' } else { 'Red' }
+
     Write-Host "`n================================================================" -ForegroundColor Cyan
     Write-Host "  SECTION  : $($section.Section)"                                  -ForegroundColor Yellow
-    Write-Host "  Status   : $($section.Status)   |   Records: $($section.RecordCount)" -ForegroundColor $statusColor
-    Write-Host "================================================================" -ForegroundColor Cyan
+    Write-Host "  Status   : $($section.Status)   |   Records: $recordCount"       -ForegroundColor $statusColor
+    Write-Host "================================================================"   -ForegroundColor Cyan
 
-    # ---- Failed section ----
     if ($section.Status -eq 'Failed') {
         Write-Host "  ERROR: $($section.Error)" -ForegroundColor Red
         continue
     }
 
-    # ---- Empty section ----
     if (-not $section.Data) {
         Write-Host "  (No data returned for this section)" -ForegroundColor Yellow
         continue
     }
 
-    # ---- Display data ----
-    if ($section.Section -in $listSections) {
-        $section.Data | Format-List
-    } else {
-        $section.Data | Format-Table -AutoSize
+    # --- On-screen display ---
+    if ($section.Section -in $SingleRecordSections) {# ============================================================
+# SCRIPT   : ServerDataCollectionModuleOrchestratorScript
+# VERSION  : 2.3.1
+# CHANGED  : 24-05-2026 -- Auto-detect scalars vs nested props (works without module update);
+#            SummaryProperties used when present, type-detection fallback otherwise;
+#            v2.2.0 -- VB coding standards alignment: CimInstance, Dark* colours,
+#            non-ASCII, hardcoded paths, ErrorActionPreference, config block,
+#            helper section, PascalCase vars, named parameters
+# AUTHOR   : Vibhu Bhatnagar
+# PURPOSE  : Downloads VB.ServerInventory module, runs full server inventory,
+#            exports each section to CSV, saves transcript TXT
+# ENCODING : UTF-8 with BOM
+# ============================================================
+
+$ErrorActionPreference = 'Stop'
+
+#region -----------------------------------------------------------------------
+# CONFIGURATION
+#-------------------------------------------------------------------------------
+$OUTPUT_ROOT   = 'C:\Realtime'
+$MODULE_ROOT   = Join-Path $env:ProgramFiles 'WindowsPowerShell\Modules'
+$REPO_ZIP_URL  = 'https://github.com/Vibhu2/ITAdmin_Tools/archive/refs/heads/main.zip'
+$SCREEN_ROWS   = 10
+
+$ModulesToLoad = @(
+    'VB.ServerInventory',
+    'VB.WorkstationReport',
+    'VB.NextCloud',
+    'VB.AdminTools',
+    'VB.DNSEnrichment',
+    'VB.WindowsDNSLogAnalysis'
+)
+
+$SingleRecordSections = @(
+    'SystemInfo', 'AzureADJoinStatus', 'DNSServerInfo',
+    'DHCPInformation', 'DHCPDetailedInfo', 'ActiveDirectory',
+    'BitLockerRecovery', 'RDSUsers', 'InactiveUsers', 'InactiveComputers'
+)
+#endregion
+
+#region -----------------------------------------------------------------------
+# HELPER FUNCTIONS
+#-------------------------------------------------------------------------------
+
+# Flattens nested arrays / hashtables / PSCustomObjects so Export-Csv writes
+# real values instead of 'System.Object[]' type-name strings.
+function ConvertTo-FlatObject {
+    [CmdletBinding()]
+    [OutputType([PSCustomObject])]
+    param([Parameter(ValueFromPipeline)][object]$InputObject)
+    process {
+        if ($null -eq $InputObject) { return }
+        $props = [ordered]@{}
+        foreach ($prop in $InputObject.PSObject.Properties) {
+            $val = $prop.Value
+            $props[$prop.Name] = switch ($true) {
+                ($val -is [System.Collections.IEnumerable] -and $val -isnot [string]) {
+                    ($val | ForEach-Object { $_ }) -join '; '; break
+                }
+                ($val -is [hashtable] -or $val -is [PSCustomObject]) {
+                    $val | ConvertTo-Json -Compress -Depth 3; break
+                }
+                default { $val }
+            }
+        }
+        [PSCustomObject]$props
+    }
+}
+#endregion
+
+#region -----------------------------------------------------------------------
+# STEP 1 : ENVIRONMENT SETUP
+#-------------------------------------------------------------------------------
+Clear-Host
+
+$Hostname  = $env:COMPUTERNAME
+$Username  = $env:USERNAME
+$PsVersion = $PSVersionTable.PSVersion.ToString()
+$Timestamp = Get-Date -Format 'dd-MMM-yyyy-HH-mm-ss'
+
+$Domain = $env:USERDNSDOMAIN
+if (-not $Domain) { $Domain = (Get-CimInstance -ClassName Win32_ComputerSystem).Domain }
+if (-not $Domain) { $Domain = 'NODOMAIN' }
+
+$OutputPath = Join-Path $OUTPUT_ROOT "${Domain}-${Hostname}-${Timestamp}"
+New-Item -Path $OutputPath -ItemType Directory -Force | Out-Null
+
+Write-Host "================================================" -ForegroundColor Cyan
+Write-Host "  SERVER INVENTORY ORCHESTRATOR"                  -ForegroundColor White
+Write-Host "  Host     : $Hostname"                           -ForegroundColor White
+Write-Host "  Domain   : $Domain"                             -ForegroundColor White
+Write-Host "  User     : $Username"                           -ForegroundColor White
+Write-Host "  PS Ver   : $PsVersion"                          -ForegroundColor White
+Write-Host "  Output   : $OutputPath"                         -ForegroundColor White
+Write-Host "================================================" -ForegroundColor Cyan
+#endregion
+
+#region -----------------------------------------------------------------------
+# STEP 2 : MODULE LOAD  (PSGallery -> GitHub ZIP fallback)
+#-------------------------------------------------------------------------------
+Write-Host "`n[Step 2] Loading VB modules..." -ForegroundColor Cyan
+
+$LoadSource = @{}
+
+# --- Remove existing copies --------------------------------------------------
+Write-Host "         Removing existing VB module installations..." -ForegroundColor Yellow
+foreach ($mod in $ModulesToLoad) {
+    Remove-Module -Name $mod -Force -ErrorAction SilentlyContinue
+    $modPath = Join-Path $MODULE_ROOT $mod
+    if (Test-Path -Path $modPath) {
+        Remove-Item -Path $modPath -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Host "         [REMOVED] $modPath" -ForegroundColor Gray
+    }
+    $LoadSource[$mod] = 'Not Loaded'
+}
+
+# --- Attempt 1: PSGallery ----------------------------------------------------
+Write-Host "`n         Attempting PSGallery installs..." -ForegroundColor Yellow
+$StillMissing = @()
+
+try {
+    Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope AllUsers -ErrorAction Stop | Out-Null
+}
+catch {
+    Write-Host "         NuGet provider unavailable -- PSGallery likely unreachable." -ForegroundColor Yellow
+}
+
+foreach ($mod in $ModulesToLoad) {
+    try {
+        Install-Module -Name $mod -Force -AllowClobber -Scope AllUsers -ErrorAction Stop
+        $LoadSource[$mod] = 'PSGallery'
+        Write-Host "         [OK] $mod installed from PSGallery." -ForegroundColor Green
+    }
+    catch {
+        Write-Host "         [FAIL] $mod -- PSGallery unavailable, queued for GitHub." -ForegroundColor Yellow
+        $StillMissing += $mod
+    }
+}
+
+# --- Attempt 2: GitHub ZIP fallback ------------------------------------------
+if ($StillMissing.Count -gt 0) {
+    Write-Host "`n         Downloading from GitHub: $($StillMissing -join ', ')" -ForegroundColor Cyan
+
+    $ZipDest     = Join-Path $env:TEMP 'ITAdmin_Tools-main.zip'
+    $ExtractRoot = Join-Path $env:TEMP 'ITAdmin_Tools-main_Extract'
+
+    Write-Host "         ZIP destination : $ZipDest"     -ForegroundColor Gray
+    Write-Host "         Extract root    : $ExtractRoot" -ForegroundColor Gray
+
+    # Download
+    Write-Host "`n         Downloading ZIP..." -ForegroundColor Yellow
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    Invoke-WebRequest -Uri $REPO_ZIP_URL -OutFile $ZipDest -UseBasicParsing -ErrorAction Stop
+    Write-Host "         Download complete. Size: $([math]::Round((Get-Item -Path $ZipDest).Length / 1KB, 1)) KB" -ForegroundColor Green
+
+    # Extract
+    Write-Host "         Extracting ZIP..." -ForegroundColor Yellow
+    if (Test-Path -Path $ExtractRoot) { Remove-Item -Path $ExtractRoot -Recurse -Force }
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    [System.IO.Compression.ZipFile]::ExtractToDirectory($ZipDest, $ExtractRoot)
+    Write-Host "         Extraction complete." -ForegroundColor Green
+
+    # Stage modules
+    Write-Host "         Staging modules..." -ForegroundColor Yellow
+    foreach ($mod in $StillMissing) {
+        $modSource = Get-ChildItem -Path $ExtractRoot -Recurse -Directory |
+                     Where-Object { $_.Name -eq $mod } |
+                     Select-Object -First 1
+
+        if (-not $modSource) {
+            Write-Host "         [MISSING] $mod -- folder not found in ZIP." -ForegroundColor Red
+            $LoadSource[$mod] = 'Not Found'
+            continue
+        }
+
+        $modDest = Join-Path $MODULE_ROOT $mod
+        if (Test-Path -Path $modDest) { Remove-Item -Path $modDest -Recurse -Force }
+        Copy-Item -Path $modSource.FullName -Destination $modDest -Recurse -Force
+
+        $fileCount = (Get-ChildItem -Path $modDest -Recurse -File).Count
+        Write-Host "         [OK] $mod staged. ($fileCount files)" -ForegroundColor Green
+        $LoadSource[$mod] = 'GitHub'
     }
 
-    # ---- CSV export ? one file per section ----
-    $CsvPath = Join-Path $OutputPath "$($section.Section).csv"
+    # Verify manifests
+    Write-Host "         Verifying manifests..." -ForegroundColor Yellow
+    foreach ($mod in $StillMissing) {
+        $psd1 = Get-ChildItem -Path (Join-Path $MODULE_ROOT $mod) -Filter '*.psd1' -Recurse -ErrorAction SilentlyContinue |
+                Select-Object -First 1
+        if ($psd1) {
+            Write-Host "         [OK] $mod manifest: $($psd1.FullName)" -ForegroundColor Green
+        }
+        else {
+            Write-Host "         [WARN] $mod -- no .psd1 manifest found." -ForegroundColor Yellow
+        }
+    }
+
+    # Cleanup temp files
+    if (Test-Path -Path $ZipDest)     { Remove-Item -Path $ZipDest     -Force -ErrorAction SilentlyContinue }
+    if (Test-Path -Path $ExtractRoot) { Remove-Item -Path $ExtractRoot -Recurse -Force -ErrorAction SilentlyContinue }
+    Write-Host "         Temp files cleaned up." -ForegroundColor Gray
+}
+
+# --- Import all modules ------------------------------------------------------
+Write-Host "`n         Importing modules..." -ForegroundColor Yellow
+foreach ($mod in $ModulesToLoad) {
+    Import-Module -Name $mod -Force -ErrorAction SilentlyContinue
+}
+
+# --- Summary -----------------------------------------------------------------
+Write-Host "`n[Step 2] Module load summary:" -ForegroundColor Cyan
+Write-Host ("-" * 62) -ForegroundColor Gray
+
+foreach ($mod in $ModulesToLoad) {
+    $imported = Get-Module -Name $mod
+    if ($imported) {
+        $source = $LoadSource[$mod]
+        $color  = switch ($source) {
+            'PSGallery' { 'Green'  }
+            'GitHub'    { 'Cyan'   }
+            default     { 'Yellow' }
+        }
+        Write-Host ("  {0,-35} v{1,-10} [{2}]" -f $mod, $imported.Version, $source) -ForegroundColor $color
+    }
+    else {
+        Write-Host ("  {0,-35} {1,-10} [FAILED]" -f $mod, '---') -ForegroundColor Red
+    }
+}
+
+Write-Host ("-" * 62) -ForegroundColor Gray
+
+if (-not (Get-Module -Name 'VB.ServerInventory')) {
+    Write-Host "`n[FATAL] VB.ServerInventory failed to load. Aborting." -ForegroundColor Red
+    Read-Host  "        Press Enter to exit"
+    exit 1
+}
+#endregion
+
+#region -----------------------------------------------------------------------
+# STEP 3 : TRANSCRIPT START
+#-------------------------------------------------------------------------------
+$TranscriptFile = Join-Path $OutputPath "${Hostname}-${Domain}-${Timestamp}-Report.txt"
+Write-Host "`n[Step 3] Starting transcript: $TranscriptFile" -ForegroundColor Cyan
+Start-Transcript -Path $TranscriptFile
+#endregion
+
+#region -----------------------------------------------------------------------
+# STEP 4 : INVENTORY DATA COLLECTION
+#-------------------------------------------------------------------------------
+Write-Host "`n[Step 4] Collecting inventory data -- all sections enabled..." -ForegroundColor Cyan
+
+$InventoryResults = Get-VBServerInventory `
+    -IncludeAD       `
+    -IncludeSecurity `
+    -IncludePrinting `
+    -IncludeApps
+
+Write-Host "         Data collection complete. Sections returned: $($InventoryResults.Count)" -ForegroundColor Green
+#endregion
+
+#region -----------------------------------------------------------------------
+# STEP 5 : SECTION-WISE REPORT OUTPUT + CSV EXPORT
+#-------------------------------------------------------------------------------
+Write-Host "`n"
+Write-Host "################################################################" -ForegroundColor White
+Write-Host "  SERVER INVENTORY REPORT : $Hostname"                            -ForegroundColor White
+Write-Host "  Generated : $(Get-Date -Format 'dd-MMM-yyyy HH:mm:ss')"        -ForegroundColor White
+Write-Host "################################################################" -ForegroundColor White
+
+foreach ($section in $InventoryResults) {
+
+    $recordCount = if ($null -ne $section.RecordCount -and $section.RecordCount -ne '') {
+        $section.RecordCount
+    } else {
+        @($section.Data).Count
+    }
+
+    $statusColor = if ($section.Status -eq 'Success') { 'Green' } else { 'Red' }
+
+    Write-Host "`n================================================================" -ForegroundColor Cyan
+    Write-Host "  SECTION  : $($section.Section)"                                  -ForegroundColor Yellow
+    Write-Host "  Status   : $($section.Status)   |   Records: $recordCount"       -ForegroundColor $statusColor
+    Write-Host "================================================================"   -ForegroundColor Cyan
+
+    if ($section.Status -eq 'Failed') {
+        Write-Host "  ERROR: $($section.Error)" -ForegroundColor Red
+        continue
+    }
+
+    if (-not $section.Data) {
+        Write-Host "  (No data returned for this section)" -ForegroundColor Yellow
+        continue
+    }
+
+    # --- On-screen display ---
+    if ($section.Section -in $SingleRecordSections) {
+        $DataObj = $section.Data
+
+        # Option C -- use SummaryProperties if module provides them; otherwise auto-detect scalars by type
+        if ($DataObj.SummaryProperties) {
+            $ScalarPropNames = $DataObj.SummaryProperties
+        } else {
+            $ScalarPropNames = @(
+                $DataObj.PSObject.Properties |
+                    Where-Object {
+                        $null -eq $_.Value -or
+                        (($_.Value -isnot [System.Collections.IEnumerable] -or $_.Value -is [string]) -and
+                         $_.Value -isnot [PSCustomObject])
+                    } | Select-Object -ExpandProperty Name
+            )
+        }
+
+        # Show scalar summary header
+        $DataObj | Select-Object -Property $ScalarPropNames | Format-List
+
+        # Option B -- expand non-scalar properties as labelled sub-sections
+        $DataObj.PSObject.Properties |
+            Where-Object { $_.Name -notin ($ScalarPropNames + @('SummaryProperties')) } |
+            ForEach-Object {
+                $PropName  = $_.Name
+                $PropValue = $_.Value
+                if ($null -eq $PropValue) { return }
+
+                if ($PropValue -is [System.Collections.IEnumerable] -and $PropValue -isnot [string]) {
+                    # Collection -- show as Format-Table with row cap
+                    $Items = @($PropValue)
+                    Write-Host "`n  --- $PropName ($($Items.Count) records) ---" -ForegroundColor Cyan
+                    Write-Host ("-" * 62) -ForegroundColor Gray
+                    $Items | Select-Object -First $SCREEN_ROWS | Format-Table -AutoSize
+                    if ($Items.Count -gt $SCREEN_ROWS) {
+                        Write-Host "  ... $($Items.Count - $SCREEN_ROWS) more row(s). See CSV for full data." -ForegroundColor Gray
+                    }
+                } else {
+                    # Single PSCustomObject (e.g. FSMORoles) -- show as Format-List
+                    Write-Host "`n  --- $PropName ---" -ForegroundColor Cyan
+                    Write-Host ("-" * 62) -ForegroundColor Gray
+                    $PropValue | Format-List
+                }
+            }
+    } else {
+        @($section.Data) | Select-Object -First $SCREEN_ROWS | Format-Table -AutoSize
+        if ($recordCount -gt $SCREEN_ROWS) {
+            Write-Host "  ... $($recordCount - $SCREEN_ROWS) more row(s) not shown. See CSV for full data." -ForegroundColor Gray
+        }
+    }
+
+    # --- CSV export ---
+    $csvPath = Join-Path $OutputPath "$($section.Section).csv"
     try {
-        $section.Data | Export-Csv -Path $CsvPath -NoTypeInformation -Encoding UTF8
-        Write-Host "  CSV exported : $CsvPath" -ForegroundColor DarkGreen
-    } catch {
-        Write-Host "  CSV export failed : $_" -ForegroundColor Red
+        $section.Data | ConvertTo-FlatObject | Export-Csv -Path $csvPath -NoTypeInformation -Encoding UTF8 -Force
+        Write-Host "  CSV : $csvPath" -ForegroundColor Green
+    }
+    catch {
+        Write-Host "  CSV export FAILED : $_" -ForegroundColor Red
     }
 }
 
@@ -281,11 +656,80 @@ Write-Host "  Output folder : $OutputPath"                                      
 Write-Host "################################################################`n" -ForegroundColor White
 #endregion
 
+#region -----------------------------------------------------------------------
+# STEP 6 : TRANSCRIPT CLOSE
+#-------------------------------------------------------------------------------
+Stop-Transcript
+#endregion
+        $DataObj = $section.Data
+
+        # Option C -- use SummaryProperties if module provides them; otherwise auto-detect scalars by type
+        if ($DataObj.SummaryProperties) {
+            $ScalarPropNames = $DataObj.SummaryProperties
+        } else {
+            $ScalarPropNames = @(
+                $DataObj.PSObject.Properties |
+                    Where-Object {
+                        $null -eq $_.Value -or
+                        (($_.Value -isnot [System.Collections.IEnumerable] -or $_.Value -is [string]) -and
+                         $_.Value -isnot [PSCustomObject])
+                    } | Select-Object -ExpandProperty Name
+            )
+        }
+
+        # Show scalar summary header
+        $DataObj | Select-Object -Property $ScalarPropNames | Format-List
+
+        # Option B -- expand non-scalar properties as labelled sub-sections
+        $DataObj.PSObject.Properties |
+            Where-Object { $_.Name -notin ($ScalarPropNames + @('SummaryProperties')) } |
+            ForEach-Object {
+                $PropName  = $_.Name
+                $PropValue = $_.Value
+                if ($null -eq $PropValue) { return }
+
+                if ($PropValue -is [System.Collections.IEnumerable] -and $PropValue -isnot [string]) {
+                    # Collection -- show as Format-Table with row cap
+                    $Items = @($PropValue)
+                    Write-Host "`n  --- $PropName ($($Items.Count) records) ---" -ForegroundColor Cyan
+                    Write-Host ("-" * 62) -ForegroundColor Gray
+                    $Items | Select-Object -First $SCREEN_ROWS | Format-Table -AutoSize
+                    if ($Items.Count -gt $SCREEN_ROWS) {
+                        Write-Host "  ... $($Items.Count - $SCREEN_ROWS) more row(s). See CSV for full data." -ForegroundColor Gray
+                    }
+                } else {
+                    # Single PSCustomObject (e.g. FSMORoles) -- show as Format-List
+                    Write-Host "`n  --- $PropName ---" -ForegroundColor Cyan
+                    Write-Host ("-" * 62) -ForegroundColor Gray
+                    $PropValue | Format-List
+                }
+            }
+    } else {
+        @($section.Data) | Select-Object -First $SCREEN_ROWS | Format-Table -AutoSize
+        if ($recordCount -gt $SCREEN_ROWS) {
+            Write-Host "  ... $($recordCount - $SCREEN_ROWS) more row(s) not shown. See CSV for full data." -ForegroundColor Gray
+        }
+    }
+
+    # --- CSV export ---
+    $csvPath = Join-Path $OutputPath "$($section.Section).csv"
+    try {
+        $section.Data | ConvertTo-FlatObject | Export-Csv -Path $csvPath -NoTypeInformation -Encoding UTF8 -Force
+        Write-Host "  CSV : $csvPath" -ForegroundColor Green
+    }
+    catch {
+        Write-Host "  CSV export FAILED : $_" -ForegroundColor Red
+    }
+}
+
+Write-Host "`n################################################################" -ForegroundColor White
+Write-Host "  END OF REPORT"                                                    -ForegroundColor White
+Write-Host "  Output folder : $OutputPath"                                      -ForegroundColor White
+Write-Host "################################################################`n" -ForegroundColor White
+#endregion
 
 #region -----------------------------------------------------------------------
 # STEP 6 : TRANSCRIPT CLOSE
-# Stop the transcript before unloading the module so the final summary lines
-# above are written to the TXT file before it is closed.
 #-------------------------------------------------------------------------------
 Stop-Transcript
 #endregion
