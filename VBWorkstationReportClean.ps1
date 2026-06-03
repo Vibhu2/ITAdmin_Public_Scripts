@@ -1,6 +1,8 @@
 # --- PS Environment Fix ---
 Set-ExecutionPolicy Unrestricted -Scope CurrentUser -Force
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+Install-Module -Name PowerShellGet -Force -AllowClobber -Scope AllUsers
+Import-Module PowerShellGet -Force
 Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Confirm:$false
 if (-not (Get-PSRepository -Name 'PSGallery' -ErrorAction SilentlyContinue)) { Register-PSRepository -Default -ErrorAction Stop }
 Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted
@@ -20,18 +22,23 @@ Uninstall-Module -Name VB.ServerInventory -Force -AllVersions -ErrorAction Silen
 Uninstall-Module -Name VB.AdminTools -Force -AllVersions -ErrorAction SilentlyContinue
 
 # Install in dependency order: NextCloud FIRST (it's the dependency)
-Install-Module -Name VB.WorkstationReport -Force -AllowClobber -Scope CurrentUser
-Install-Module -Name VB.NextCloud -Force -AllowClobber -Scope CurrentUser
-Install-Module -Name VB.ServerInventory -Force -AllowClobber -Scope CurrentUser
-Install-Module -Name VB.AdminTools -Force -AllowClobber -Scope CurrentUser
+# AllUsers scope = C:\Program Files\WindowsPowerShell\Modules — reliable when running as SYSTEM via RMM
+Install-Module -Name VB.WorkstationReport -Force -AllowClobber -Scope AllUsers
+Install-Module -Name VB.NextCloud -Force -AllowClobber -Scope AllUsers
+Install-Module -Name VB.ServerInventory -Force -AllowClobber -Scope AllUsers
+Install-Module -Name VB.AdminTools -Force -AllowClobber -Scope AllUsers
+Install-Module -Name VB.DNSEnrichment -Force -AllowClobber -Scope AllUsers
+Install-Module -Name VB.WindowsDNSLogAnalysis -Force -AllowClobber -Scope AllUsers
 
-start-sleep -seconds (Get-Random -Minimum 4 -Maximum 10)
+start-sleep -seconds (Get-Random -Minimum 6 -Maximum 15)
 
 # Import modules explicitly into current session
 Import-Module VB.NextCloud -Force
 Import-Module VB.WorkstationReport -Force
 Import-Module VB.ServerInventory -Force
 Import-Module VB.AdminTools -Force
+Import-Module VB.DNSEnrichment -Force
+Import-Module VB.WindowsDNSLogAnalysis -Force
 
 # Verify modules are loaded
 Write-Host "Checking loaded modules..." -ForegroundColor Cyan
@@ -63,3 +70,5 @@ Uninstall-Module -Name VB.WorkstationReport -Force -AllVersions -ErrorAction Sil
 Uninstall-Module -Name VB.NextCloud -Force -AllVersions -ErrorAction SilentlyContinue
 Uninstall-Module -Name VB.ServerInventory -Force -AllVersions -ErrorAction SilentlyContinue
 Uninstall-Module -Name VB.AdminTools -Force -AllVersions -ErrorAction SilentlyContinue
+Uninstall-Module -Name VB.DNSEnrichment -Force -AllVersions -ErrorAction SilentlyContinue
+Uninstall-Module -Name VB.WindowsDNSLogAnalysis -Force -AllVersions -ErrorAction SilentlyContinue
