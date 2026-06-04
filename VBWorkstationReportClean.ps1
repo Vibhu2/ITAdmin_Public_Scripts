@@ -7,7 +7,7 @@ Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Confirm:$f
 if (-not (Get-PSRepository -Name 'PSGallery' -ErrorAction SilentlyContinue)) { Register-PSRepository -Default -ErrorAction Stop }
 Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted
 
-#Cleaninng up old report files
+#Cleaning up old report files
 if (-not (Test-Path 'C:\Realtime\Reports\')) { New-Item -Path 'C:\Realtime\Reports\' -ItemType Directory }
 Remove-Item -Path "C:\Realtime\Reports\*.csv" -Force -ErrorAction SilentlyContinue
 
@@ -15,11 +15,14 @@ Remove-Item -Path "C:\Realtime\Reports\*.csv" -Force -ErrorAction SilentlyContin
 $host.UI.RawUI.BufferSize = New-Object System.Management.Automation.Host.Size(500, 9000)
 
 # --- Module Cleanup and Reinstall ---
-Remove-Module VB.WorkstationReport, VB.NextCloud, VB.ServerInventory, VB.AdminTools  -Force -ErrorAction SilentlyContinue
 Uninstall-Module -Name VB.WorkstationReport -Force -AllVersions -ErrorAction SilentlyContinue
 Uninstall-Module -Name VB.NextCloud -Force -AllVersions -ErrorAction SilentlyContinue
 Uninstall-Module -Name VB.ServerInventory -Force -AllVersions -ErrorAction SilentlyContinue
 Uninstall-Module -Name VB.AdminTools -Force -AllVersions -ErrorAction SilentlyContinue
+Uninstall-Module -Name VB.DNSEnrichment  -Force -AllVersions -ErrorAction SilentlyContinue
+Uninstall-Module -Name VB.WindowsDNSLogAnalysis -Force -AllVersions -ErrorAction SilentlyContinue
+Remove-Module VB.WorkstationReport, VB.NextCloud, VB.ServerInventory, VB.AdminTools, VB.DNSEnrichment, VB.WindowsDNSLogAnalysis  -Force -ErrorAction SilentlyContinue
+
 
 # Install in dependency order: NextCloud FIRST (it's the dependency)
 # AllUsers scope = C:\Program Files\WindowsPowerShell\Modules — reliable when running as SYSTEM via RMM
@@ -49,7 +52,7 @@ $cred = New-Object PSCredential('justvibh', (ConvertTo-SecureString 'S2MgX-CiqjC
 
 try {
     Write-Host "Starting workstation report..." -ForegroundColor Cyan
-    Invoke-VBWorkstationReport -Credential $cred `
+    Invoke-VBWorkstationReport  -SkipUpload -Verbose -Credential $cred `
         -NextcloudBaseUrl 'https://vault.dediserve.com' `
         -NextcloudDestination 'Realtime-IT/Reports' `
         -OutputPath 'C:\Realtime\Reports'
@@ -65,10 +68,10 @@ Remove-Item -Path "C:\Realtime\Reports\*.csv" -Force -ErrorAction SilentlyContin
 
 Start-Sleep -Seconds (Get-Random -Minimum 5 -Maximum 30)
 # --- Module Cleanup and Reinstall ---
-Remove-Module VB.WorkstationReport, VB.NextCloud, VB.ServerInventory, VB.AdminTools  -Force -ErrorAction SilentlyContinue
 Uninstall-Module -Name VB.WorkstationReport -Force -AllVersions -ErrorAction SilentlyContinue
 Uninstall-Module -Name VB.NextCloud -Force -AllVersions -ErrorAction SilentlyContinue
 Uninstall-Module -Name VB.ServerInventory -Force -AllVersions -ErrorAction SilentlyContinue
 Uninstall-Module -Name VB.AdminTools -Force -AllVersions -ErrorAction SilentlyContinue
 Uninstall-Module -Name VB.DNSEnrichment -Force -AllVersions -ErrorAction SilentlyContinue
 Uninstall-Module -Name VB.WindowsDNSLogAnalysis -Force -AllVersions -ErrorAction SilentlyContinue
+Remove-Module VB.WorkstationReport, VB.NextCloud, VB.ServerInventory, VB.AdminTools, VB.DNSEnrichment, VB.WindowsDNSLogAnalysis  -Force -ErrorAction SilentlyContinue
