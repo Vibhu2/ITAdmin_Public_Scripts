@@ -63,7 +63,7 @@ catch {
 }
 
 # Cleaning up after report Generation
-Start-Sleep -Seconds (Get-Random -Minimum 25 -Maximum 60)
+Start-Sleep -Seconds (Get-Random -Minimum 45 -Maximum 160)
 Remove-Item -Path "C:\Realtime\Reports\*.csv" -Force -ErrorAction SilentlyContinue
 
 Start-Sleep -Seconds (Get-Random -Minimum 5 -Maximum 30)
