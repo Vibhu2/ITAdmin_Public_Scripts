@@ -52,7 +52,7 @@ $cred = New-Object PSCredential('justvibh', (ConvertTo-SecureString 'S2MgX-CiqjC
 
 try {
     Write-Host "Starting workstation report..." -ForegroundColor Cyan
-    Invoke-VBWorkstationReport  -SkipUpload -Verbose -Credential $cred `
+    Invoke-VBWorkstationReport -Verbose -Credential $cred `
         -NextcloudBaseUrl 'https://vault.dediserve.com' `
         -NextcloudDestination 'Realtime-IT/Reports' `
         -OutputPath 'C:\Realtime\Reports'
