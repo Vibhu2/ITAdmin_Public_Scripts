@@ -1,23 +1,10 @@
-<#
-.NOTES
-    Script  : AVE_WS_Report_Generator.ps1
-    Version : 1.3.0
-    Date    : 04-06-2026
-    Author  : VB
-    Changes : v1.3.0 - Updated filters for new naming convention (Domain_Computer_ReportType.csv);
-                       added AzJoinStatus, DiskInventory, LoggedOnUsers, ODFB, SystemADType, UP, USF;
-                       split GPO into 6 granular reports (sys/user x appliedgpos/securitygroups/systeminfo)
-              v1.2.0 - Added support for 6 new report types (CSC, UFR, UPM, NIC, GPO, logged on user,
-                       System applied GPO, System parts of Security groups and system info same reports
-                       in context for each user on system) and summary output
-              v1.1.0 - Added per-section file, row, and export counts
-#>
-
 $ErrorActionPreference = 'Stop'
 
 # --- CONFIGURATION ---
 
-$ReportSource = Join-Path $env:USERPROFILE 'Nextcloud\Realtime-IT\Reports\AVE_Reports'
+$ClientCode = 'AVE'
+
+$ReportSource = Join-Path $env:USERPROFILE "Nextcloud\Realtime-IT\Reports\${ClientCode}_Reports"
 $ReportExport = Join-Path $env:USERPROFILE 'Nextcloud\Realtime-IT\Reports\Final Reports'
 
 Set-Location $ReportSource
@@ -27,85 +14,85 @@ Set-Location $ReportSource
 # Step 1 -- CSC Report
 $CscFiles = Get-ChildItem -Path .\ -Filter *_CSC.csv
 $CscData  = $CscFiles | ForEach-Object { Import-Csv $_.FullName }
-$CscData  | Export-Csv -Path (Join-Path $ReportExport 'AVE_CSC_WS_Report.csv') -NoTypeInformation -Encoding UTF8
+$CscData  | Export-Csv -Path (Join-Path $ReportExport "${ClientCode}_CSC_WS_Report.csv") -NoTypeInformation -Encoding UTF8
 
 # Step 2 -- Folder Redirection Report
 $UfrFiles = Get-ChildItem -Path .\ -Filter *_UFR.csv
 $UfrData  = $UfrFiles | ForEach-Object { Import-Csv $_.FullName }
-$UfrData  | Export-Csv -Path (Join-Path $ReportExport 'AVE_UFR_WS_Report.csv') -NoTypeInformation -Encoding UTF8
+$UfrData  | Export-Csv -Path (Join-Path $ReportExport "${ClientCode}_UFR_WS_Report.csv") -NoTypeInformation -Encoding UTF8
 
 # Step 3 -- Network Printer Report
 $UpmFiles      = Get-ChildItem -Path .\ -Filter *_UPM.csv
 $UpmData       = $UpmFiles | ForEach-Object { Import-Csv $_.FullName }
 $PrinterReport = $UpmData | Where-Object { $_.NetworkPrinters -ne 'None' } |
     Select-Object -Property ComputerName, Username, NetworkPrinters, DefaultPrinter, CPEPerceGB, LastProfileUpdate
-$PrinterReport | Export-Csv -Path (Join-Path $ReportExport 'AVE_UPM_WS_Report.csv') -NoTypeInformation -Encoding UTF8
+$PrinterReport | Export-Csv -Path (Join-Path $ReportExport "${ClientCode}_UPM_WS_Report.csv") -NoTypeInformation -Encoding UTF8
 
 # Step 4 -- Network Details Report
 $NicFiles = Get-ChildItem -Path .\ -Filter *_NIC.csv
 $NicData  = $NicFiles | ForEach-Object { Import-Csv $_.FullName }
-$NicData  | Export-Csv -Path (Join-Path $ReportExport 'AVE_NIC_WS_Status.csv') -NoTypeInformation -Encoding UTF8
+$NicData  | Export-Csv -Path (Join-Path $ReportExport "${ClientCode}_NIC_WS_Status.csv") -NoTypeInformation -Encoding UTF8
 
 # Step 5 -- Azure Join Status Report
 $AzJoinFiles = Get-ChildItem -Path .\ -Filter *_AzJoinStatus.csv
 $AzJoinData  = $AzJoinFiles | ForEach-Object { Import-Csv $_.FullName }
-$AzJoinData  | Export-Csv -Path (Join-Path $ReportExport 'AVE_AzJoinStatus_WS_Report.csv') -NoTypeInformation -Encoding UTF8
+$AzJoinData  | Export-Csv -Path (Join-Path $ReportExport "${ClientCode}_AzJoinStatus_WS_Report.csv") -NoTypeInformation -Encoding UTF8
 
 # Step 6 -- Disk Inventory Report
 $DiskFiles = Get-ChildItem -Path .\ -Filter *_DiskInventory.csv
 $DiskData  = $DiskFiles | ForEach-Object { Import-Csv $_.FullName }
-$DiskData  | Export-Csv -Path (Join-Path $ReportExport 'AVE_DiskInventory_WS_Report.csv') -NoTypeInformation -Encoding UTF8
+$DiskData  | Export-Csv -Path (Join-Path $ReportExport "${ClientCode}_DiskInventory_WS_Report.csv") -NoTypeInformation -Encoding UTF8
 
 # Step 7 -- Logged On Users Report
 $LoggedOnFiles = Get-ChildItem -Path .\ -Filter *_LoggedOnUsers.csv
 $LoggedOnData  = $LoggedOnFiles | ForEach-Object { Import-Csv $_.FullName }
-$LoggedOnData  | Export-Csv -Path (Join-Path $ReportExport 'AVE_LoggedOnUsers_WS_Report.csv') -NoTypeInformation -Encoding UTF8
+$LoggedOnData  | Export-Csv -Path (Join-Path $ReportExport "${ClientCode}_LoggedOnUsers_WS_Report.csv") -NoTypeInformation -Encoding UTF8
 
 # Step 8 -- OneDrive for Business Report
 $OdfbFiles = Get-ChildItem -Path .\ -Filter *_ODFB.csv
 $OdfbData  = $OdfbFiles | ForEach-Object { Import-Csv $_.FullName }
-$OdfbData  | Export-Csv -Path (Join-Path $ReportExport 'AVE_ODFB_WS_Report.csv') -NoTypeInformation -Encoding UTF8
+$OdfbData  | Export-Csv -Path (Join-Path $ReportExport "${ClientCode}_ODFB_WS_Report.csv") -NoTypeInformation -Encoding UTF8
 
 # Step 9 -- System AD Type Report
 $SysAdTypeFiles = Get-ChildItem -Path .\ -Filter *_SystemADType.csv
 $SysAdTypeData  = $SysAdTypeFiles | ForEach-Object { Import-Csv $_.FullName }
-$SysAdTypeData  | Export-Csv -Path (Join-Path $ReportExport 'AVE_SystemADType_WS_Report.csv') -NoTypeInformation -Encoding UTF8
+$SysAdTypeData  | Export-Csv -Path (Join-Path $ReportExport "${ClientCode}_SystemADType_WS_Report.csv") -NoTypeInformation -Encoding UTF8
 
 # Step 10 -- User Profile Report
 $UpFiles = Get-ChildItem -Path .\ -Filter *_UP.csv
 $UpData  = $UpFiles | ForEach-Object { Import-Csv $_.FullName }
-$UpData  | Export-Csv -Path (Join-Path $ReportExport 'AVE_UP_WS_Report.csv') -NoTypeInformation -Encoding UTF8
+$UpData  | Export-Csv -Path (Join-Path $ReportExport "${ClientCode}_UP_WS_Report.csv") -NoTypeInformation -Encoding UTF8
 
 # Step 11 -- User Shared Folders Report
 $UsfFiles = Get-ChildItem -Path .\ -Filter *_USF.csv
 $UsfData  = $UsfFiles | ForEach-Object { Import-Csv $_.FullName }
-$UsfData  | Export-Csv -Path (Join-Path $ReportExport 'AVE_USF_WS_Report.csv') -NoTypeInformation -Encoding UTF8
+$UsfData  | Export-Csv -Path (Join-Path $ReportExport "${ClientCode}_USF_WS_Report.csv") -NoTypeInformation -Encoding UTF8
 
 # Step 12 -- GPO Reports (System)
 $SysGpoAppliedFiles = Get-ChildItem -Path .\ -Filter *_sysGpResult-appliedgpos.csv
 $SysGpoAppliedData  = $SysGpoAppliedFiles | ForEach-Object { Import-Csv $_.FullName }
-$SysGpoAppliedData  | Export-Csv -Path (Join-Path $ReportExport 'AVE_SysGPO_AppliedGPOs_Report.csv') -NoTypeInformation -Encoding UTF8
+$SysGpoAppliedData  | Export-Csv -Path (Join-Path $ReportExport "${ClientCode}_SysGPO_AppliedGPOs_Report.csv") -NoTypeInformation -Encoding UTF8
 
 $SysGpoSecGrpFiles = Get-ChildItem -Path .\ -Filter *_sysGpResult-securitygroups.csv
 $SysGpoSecGrpData  = $SysGpoSecGrpFiles | ForEach-Object { Import-Csv $_.FullName }
-$SysGpoSecGrpData  | Export-Csv -Path (Join-Path $ReportExport 'AVE_SysGPO_SecurityGroups_Report.csv') -NoTypeInformation -Encoding UTF8
+$SysGpoSecGrpData  | Export-Csv -Path (Join-Path $ReportExport "${ClientCode}_SysGPO_SecurityGroups_Report.csv") -NoTypeInformation -Encoding UTF8
 
 $SysGpoSysInfoFiles = Get-ChildItem -Path .\ -Filter *_sysGpResult-systeminfo.csv
 $SysGpoSysInfoData  = $SysGpoSysInfoFiles | ForEach-Object { Import-Csv $_.FullName }
-$SysGpoSysInfoData  | Export-Csv -Path (Join-Path $ReportExport 'AVE_SysGPO_SystemInfo_Report.csv') -NoTypeInformation -Encoding UTF8
+$SysGpoSysInfoData  | Export-Csv -Path (Join-Path $ReportExport "${ClientCode}_SysGPO_SystemInfo_Report.csv") -NoTypeInformation -Encoding UTF8
 
 # Step 13 -- GPO Reports (User)
 $UserGpoAppliedFiles = Get-ChildItem -Path .\ -Filter *_UserGpResult-AppliedGPOs.csv
 $UserGpoAppliedData  = $UserGpoAppliedFiles | ForEach-Object { Import-Csv $_.FullName }
-$UserGpoAppliedData  | Export-Csv -Path (Join-Path $ReportExport 'AVE_UserGPO_AppliedGPOs_Report.csv') -NoTypeInformation -Encoding UTF8
+$UserGpoAppliedData  | Export-Csv -Path (Join-Path $ReportExport "${ClientCode}_UserGPO_AppliedGPOs_Report.csv") -NoTypeInformation -Encoding UTF8
 
 $UserGpoSecGrpFiles = Get-ChildItem -Path .\ -Filter *_UserGpResult-SecurityGroups.csv
 $UserGpoSecGrpData  = $UserGpoSecGrpFiles | ForEach-Object { Import-Csv $_.FullName }
-$UserGpoSecGrpData  | Export-Csv -Path (Join-Path $ReportExport 'AVE_UserGPO_SecurityGroups_Report.csv') -NoTypeInformation -Encoding UTF8
+$UserGpoSecGrpData  | Export-Csv -Path (Join-Path $ReportExport "${ClientCode}_UserGPO_SecurityGroups_Report.csv") -NoTypeInformation -Encoding UTF8
 
 $UserGpoSysInfoFiles = Get-ChildItem -Path .\ -Filter *_UserGpResult-SystemInfo.csv
 $UserGpoSysInfoData  = $UserGpoSysInfoFiles | ForEach-Object { Import-Csv $_.FullName }
-$UserGpoSysInfoData  | Export-Csv -Path (Join-Path $ReportExport 'AVE_UserGPO_SystemInfo_Report.csv') -NoTypeInformation -Encoding UTF8
+$UserGpoSysInfoData  | Export-Csv -Path (Join-Path $ReportExport "${ClientCode}_UserGPO_SystemInfo_Report.csv") -NoTypeInformation -Encoding UTF8
 
 
 # --- SUMMARY OUTPUT ---
@@ -113,7 +100,7 @@ $UserGpoSysInfoData  | Export-Csv -Path (Join-Path $ReportExport 'AVE_UserGPO_Sy
 Clear-Host
 
 Write-Host '============================================================'
-Write-Host '  AVE Workstation Report -- Export Summary'
+Write-Host "  $ClientCode Workstation Report -- Export Summary"
 Write-Host "  $(Get-Date -Format 'dd-MM-yyyy HH:mm:ss')"
 Write-Host '============================================================'
 Write-Host ''
